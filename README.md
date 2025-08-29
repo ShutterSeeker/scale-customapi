@@ -5,8 +5,6 @@ This project provides a custom API for Manhattan SCALE, allowing user input from
 ## Features
 
 This project lets you easily add custom actions to your Manhattan SCALE web app. With this tool, you can:
-
-## Features
 - Edit any table in SCALE using simple user input from a dialog box—no coding required for each new action!
 - Works directly with your existing SCALE web app and dialogs.
 - Fully modular: after setup, adding new actions is easy—just write the SQL you want to run.
