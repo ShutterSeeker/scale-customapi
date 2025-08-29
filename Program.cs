@@ -1,6 +1,8 @@
 // Program.cs (ASP.NET Core 8/9 Minimal API)
-using System.Data;
 using Microsoft.Data.SqlClient;
+using System;
+using System.Data;
+using static System.Collections.Specialized.BitVector32;
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
@@ -27,7 +29,7 @@ app.Use(async (context, next) =>
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapPost("/WavePriority", async (HttpRequest req) =>
+app.MapPost("/ExecProc", async (HttpRequest req) =>
 {
     try
     {
@@ -39,60 +41,62 @@ app.MapPost("/WavePriority", async (HttpRequest req) =>
         if (!string.Equals(apiKey, expectedKey, StringComparison.Ordinal))
             return Results.Unauthorized();
 
-        var contentType = req.ContentType?.ToLowerInvariant();
-        List<Dictionary<string, object>> items = new();
-
-        if (contentType != null && contentType.Contains("application/x-www-form-urlencoded"))
+        // Get 'action' from query string
+        var action = req.Query["action"].ToString();
+        if (string.IsNullOrWhiteSpace(action))
         {
-            var form = await req.ReadFormAsync();
-            var dict = new Dictionary<string, object>();
-            foreach (var kvp in form)
+            return Results.BadRequest(new
             {
-                dict[kvp.Key] = kvp.Value.ToString();
-            }
-            items.Add(dict);
+                ErrorCode = "MissingAction",
+                ErrorType = 1,
+                Message = "Missing required query parameter 'action'.",
+                AdditionalErrors = Array.Empty<string>(),
+                Data = (object?)null
+            });
         }
-        else
+
+        // Read JSON body for internalID and changeValue
+        using var reader = new StreamReader(req.Body);
+        var raw = await reader.ReadToEndAsync();
+
+        List<Dictionary<string, object>> items = new();
+        try
         {
-            using var reader = new StreamReader(req.Body);
-            var raw = await reader.ReadToEndAsync();
-            object? payload;
+            // Try to parse as array first
+            items = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(raw);
+        }
+        catch
+        {
             try
             {
-                payload = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(raw);
+                // Try to parse as single object
+                var obj = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(raw);
+                if (obj != null)
+                    items.Add(obj);
             }
-            catch
+            catch (Exception ex2)
             {
-                try
-                {
-                    payload = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(raw);
-                }
-                catch (Exception ex2)
-                {
-                    return Results.BadRequest(new
-                    {
-                        ErrorCode = "InvalidPayload",
-                        ErrorType = 1,
-                        Message = "Invalid payload.",
-                        AdditionalErrors = new[] { ex2.Message },
-                        Data = (object?)null
-                    });
-                }
-            }
-
-            if (payload is List<Dictionary<string, object>> arr && arr.Count > 0)
-                items = arr;
-            else if (payload is Dictionary<string, object> obj)
-                items = new List<Dictionary<string, object>> { obj };
-            else
                 return Results.BadRequest(new
                 {
                     ErrorCode = "InvalidPayload",
                     ErrorType = 1,
                     Message = "Invalid payload.",
-                    AdditionalErrors = Array.Empty<string>(),
+                    AdditionalErrors = new[] { ex2.Message },
                     Data = (object?)null
                 });
+            }
+        }
+
+        if (items.Count == 0)
+        {
+            return Results.BadRequest(new
+            {
+                ErrorCode = "InvalidPayload",
+                ErrorType = 1,
+                Message = "Invalid payload.",
+                AdditionalErrors = Array.Empty<string>(),
+                Data = (object?)null
+            });
         }
 
         string? connStr = null;
@@ -117,36 +121,38 @@ app.MapPost("/WavePriority", async (HttpRequest req) =>
             return Results.Problem($"Error opening SQL connection: {ex.Message}", statusCode: 500);
         }
 
-        foreach (var item in items)
+        foreach (var body in items)
         {
-            if (!item.TryGetValue("launchNum", out var launchNum) || !item.TryGetValue("priority", out var priority))
+            if (!body.TryGetValue("internalID", out var internalID) ||
+                !body.TryGetValue("changeValue", out var changeValue))
             {
                 return Results.BadRequest(new
                 {
                     ErrorCode = "MissingParams",
                     ErrorType = 1,
-                    Message = "Missing required params 'launchNum' and/or 'priority'.",
+                    Message = "Missing required params 'internalID' and/or 'changeValue'.",
                     AdditionalErrors = Array.Empty<string>(),
                     Data = (object?)null
                 });
             }
 
             // Extract values from JsonElement if needed
-            object? launchNumValue = launchNum is System.Text.Json.JsonElement je1 && je1.ValueKind == System.Text.Json.JsonValueKind.Number
-                ? je1.GetInt32()
-                : launchNum is System.Text.Json.JsonElement je1s && je1s.ValueKind == System.Text.Json.JsonValueKind.String
-                    ? je1s.GetString()
-                    : launchNum;
-
-            object? priorityValue = priority is System.Text.Json.JsonElement je2 && je2.ValueKind == System.Text.Json.JsonValueKind.Number
+            object? internalIDValue = internalID is System.Text.Json.JsonElement je2 && je2.ValueKind == System.Text.Json.JsonValueKind.Number
                 ? je2.GetInt32()
-                : priority is System.Text.Json.JsonElement je2s && je2s.ValueKind == System.Text.Json.JsonValueKind.String
+                : internalID is System.Text.Json.JsonElement je2s && je2s.ValueKind == System.Text.Json.JsonValueKind.String
                     ? je2s.GetString()
-                    : priority;
+                    : internalID;
 
-            await using var cmd = new SqlCommand("usp_WavePriority", conn) { CommandType = CommandType.StoredProcedure };
-            cmd.Parameters.AddWithValue("@launchNum", launchNumValue ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@priority", priorityValue ?? DBNull.Value);
+            object? changeValueValue = changeValue is System.Text.Json.JsonElement je3 && je3.ValueKind == System.Text.Json.JsonValueKind.Number
+                ? je3.GetInt32()
+                : changeValue is System.Text.Json.JsonElement je3s && je3s.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? je3s.GetString()
+                    : changeValue;
+
+            await using var cmd = new SqlCommand("usp_CustomAPI", conn) { CommandType = CommandType.StoredProcedure };
+            cmd.Parameters.AddWithValue("@action", action ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@internalID", internalIDValue ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@changeValue", changeValueValue ?? DBNull.Value);
 
             try
             {
@@ -160,7 +166,7 @@ app.MapPost("/WavePriority", async (HttpRequest req) =>
                     ErrorType = 1,
                     Message = ex.Message,
                     AdditionalErrors = Array.Empty<string>(),
-                    Data = new { launchNum = launchNumValue, priority = priorityValue }
+                    Data = new { action, internalID = internalIDValue, changeValue = changeValueValue }
                 });
             }
         }
@@ -170,8 +176,8 @@ app.MapPost("/WavePriority", async (HttpRequest req) =>
         {
             ConfirmationMessageCode = (string?)null,
             ConfirmationMessage = (string?)null,
-            MessageCode = "MSG_CHANGEPRIORITY01",
-            Message = "Change priority successful."
+            MessageCode = "MSG_SUCCESS01",
+            Message = "Stored procedure execute successful."
         });
     }
     catch (Exception ex)
