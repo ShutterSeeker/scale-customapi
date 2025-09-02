@@ -151,13 +151,13 @@ app.MapPost("/ExecProc", async (HttpRequest req, IConfiguration config) =>
         if (!body.TryGetValue("internalID", out var internalID) ||
             !body.TryGetValue("changeValue", out var changeValue))
         {
-            return Results.BadRequest(new
+            return Results.BadRequest(new Dictionary<string, object?>
             {
-                ErrorCode = "MissingParams",
-                ErrorType = 1,
-                Message = "Missing required params 'internalID' and/or 'changeValue'.",
-                AdditionalErrors = Array.Empty<string>(),
-                Data = (object?)null
+                ["ErrorCode"] = "MissingParams",
+                ["ErrorType"] = 1,
+                ["Message"] = "Missing required params 'internalID' and/or 'changeValue'.",
+                ["AdditionalErrors"] = Array.Empty<string>(),
+                ["Data"] = null
             });
         }
 
@@ -190,24 +190,31 @@ app.MapPost("/ExecProc", async (HttpRequest req, IConfiguration config) =>
         }
         catch (Exception ex)
         {
-            return Results.BadRequest(new
+            return Results.BadRequest(new Dictionary<string, object?>
             {
-                ErrorCode = "SqlError",
-                ErrorType = 1,
-                ex.Message,
-                AdditionalErrors = new[] { ex.ToString() },
-                Data = new { action, internalID = internalIDValue, changeValue = changeValueValue }
+                ["ErrorCode"] = "SqlError",
+                ["ErrorType"] = 1,
+                ["Message"] = ex.Message,
+                ["AdditionalErrors"] = new[] { ex.ToString() },
+                ["Data"] = new Dictionary<string, object?>
+                {
+                    ["action"] = action,
+                    ["internalID"] = internalIDValue,
+                    ["changeValue"] = changeValueValue
+                }
             });
         }
     }
 
     return Results.Ok(new
+    var response = new Dictionary<string, object?>
     {
-        ConfirmationMessageCode = (string?)null,
-        ConfirmationMessage = (string?)null,
-        MessageCode = finalMessageCode,
-        Message = finalMessage
-    });
+        ["ConfirmationMessageCode"] = null,
+        ["ConfirmationMessage"] = null,
+        ["MessageCode"] = finalMessageCode,
+        ["Message"] = finalMessage
+    };
+    return Results.Ok(response);
 });
 
 app.Run();
