@@ -143,6 +143,9 @@ app.MapPost("/ExecProc", async (HttpRequest req, IConfiguration config) =>
         return Results.Problem("Database connection failed.", statusCode: 500);
     }
 
+    string finalMessageCode = "MSG_SUCCESS01";
+    string finalMessage = "Stored procedure execute successful.";
+
     foreach (var body in items)
     {
         if (!body.TryGetValue("internalID", out var internalID) ||
@@ -170,23 +173,29 @@ app.MapPost("/ExecProc", async (HttpRequest req, IConfiguration config) =>
                 ? je3s.GetString()
                 : changeValue;
 
-        await using var cmd = new SqlCommand("usp_CustomAPI", conn) { CommandType = CommandType.StoredProcedure };
+        await using var cmd = new SqlCommand("usp_UserAction", conn) { CommandType = CommandType.StoredProcedure };
         cmd.Parameters.AddWithValue("@action", action ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("@internalID", internalIDValue ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@changeValue", changeValueValue ?? DBNull.Value);
 
         try
         {
-            await cmd.ExecuteNonQueryAsync();
+            await using var procReader = await cmd.ExecuteReaderAsync();
+            if (await procReader.ReadAsync())
+            {
+                finalMessageCode = procReader.GetString(procReader.GetOrdinal("MessageCode"));
+                finalMessage = procReader.GetString(procReader.GetOrdinal("Message"));
+            }
+            procReader.Close();
         }
-        catch
+        catch (Exception ex)
         {
             return Results.BadRequest(new
             {
                 ErrorCode = "SqlError",
                 ErrorType = 1,
-                Message = "Database operation failed.",
-                AdditionalErrors = Array.Empty<string>(),
+                ex.Message,
+                AdditionalErrors = new[] { ex.ToString() },
                 Data = new { action, internalID = internalIDValue, changeValue = changeValueValue }
             });
         }
@@ -196,8 +205,8 @@ app.MapPost("/ExecProc", async (HttpRequest req, IConfiguration config) =>
     {
         ConfirmationMessageCode = (string?)null,
         ConfirmationMessage = (string?)null,
-        MessageCode = "MSG_SUCCESS01",
-        Message = "Stored procedure execute successful."
+        MessageCode = finalMessageCode,
+        Message = finalMessage
     });
 });
 
