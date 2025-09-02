@@ -25,7 +25,7 @@ Inside `usp_UserAction`, you can use the value of `@action` to branch your logic
 - Clone this repository.
 - Publish the project to a folder on your SCALE application server.
 
-### 2. Edit web.config Before Publishing
+### 2. Edit web.config After Publishing
 - Open the `web.config` file in your published folder (or add one if it doesn't exist).
 - Add the following configurations:
   ```xml
