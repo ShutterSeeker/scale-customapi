@@ -1,6 +1,7 @@
 // Program.cs (ASP.NET Core 8/9 Minimal API)
-using Microsoft.Data.SqlClient;
+using Azure;
 using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.Data.SqlClient;
 using System.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -206,15 +207,13 @@ app.MapPost("/ExecProc", async (HttpRequest req, IConfiguration config) =>
         }
     }
 
-    return Results.Ok(new
-    var response = new Dictionary<string, object?>
+    return Results.Ok(new Dictionary<string, object?>
     {
         ["ConfirmationMessageCode"] = null,
         ["ConfirmationMessage"] = null,
         ["MessageCode"] = finalMessageCode,
         ["Message"] = finalMessage
-    };
-    return Results.Ok(response);
+    });
 });
 
 app.Run();
